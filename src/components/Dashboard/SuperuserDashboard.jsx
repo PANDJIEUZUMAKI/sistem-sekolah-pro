@@ -1,9 +1,6 @@
 import React, { useState } from 'react';
 import { 
   Users, 
-  Settings, 
-  Database, 
-  Shield, 
   BarChart3,
   UserCheck,
   Monitor,
@@ -13,7 +10,9 @@ import {
   Plus,
   Edit,
   Eye,
-  UserX
+  UserX,
+  Settings,
+  Database
 } from 'lucide-react';
 import { logout } from '../../utils/auth';
 
@@ -45,9 +44,6 @@ const SuperuserDashboard = ({ currentUser = {} }) => {
   const tabs = [
     { id: 'overview', name: 'Ringkasan', icon: BarChart3 },
     { id: 'users', name: 'Manajemen Pengguna', icon: Users },
-    { id: 'settings', name: 'Pengaturan Sistem', icon: Settings },
-    { id: 'database', name: 'Basis Data', icon: Database },
-    { id: 'security', name: 'Keamanan', icon: Shield },
   ];
 
   // Default user info jika currentUser undefined
@@ -301,45 +297,6 @@ const SuperuserDashboard = ({ currentUser = {} }) => {
     </div>
   );
 
-  const renderSettings = () => (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <h2 className="text-4xl font-bold text-gray-900 mb-10">Pengaturan Sistem</h2>
-      <div className="bg-white shadow-2xl rounded-2xl p-12 border border-gray-100">
-        <div className="text-center py-16">
-          <Settings className="h-20 w-20 text-gray-400 mx-auto mb-6" />
-          <p className="text-2xl text-gray-600 mb-2">Fitur pengaturan sistem sedang dalam pengembangan...</p>
-          <p className="text-lg text-gray-500">Akan segera hadir dengan fitur lengkap</p>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderDatabase = () => (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <h2 className="text-4xl font-bold text-gray-900 mb-10">Manajemen Basis Data</h2>
-      <div className="bg-white shadow-2xl rounded-2xl p-12 border border-gray-100">
-        <div className="text-center py-16">
-          <Database className="h-20 w-20 text-gray-400 mx-auto mb-6" />
-          <p className="text-2xl text-gray-600 mb-2">Fitur manajemen basis data sedang dalam pengembangan...</p>
-          <p className="text-lg text-gray-500">Akan segera hadir dengan fitur lengkap</p>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderSecurity = () => (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <h2 className="text-4xl font-bold text-gray-900 mb-10">Pengaturan Keamanan</h2>
-      <div className="bg-white shadow-2xl rounded-2xl p-12 border border-gray-100">
-        <div className="text-center py-16">
-          <Shield className="h-20 w-20 text-gray-400 mx-auto mb-6" />
-          <p className="text-2xl text-gray-600 mb-2">Fitur pengaturan keamanan sedang dalam pengembangan...</p>
-          <p className="text-lg text-gray-500">Akan segera hadir dengan fitur lengkap</p>
-        </div>
-      </div>
-    </div>
-  );
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       {/* HEADER LEBIH BESAR */}
@@ -404,9 +361,6 @@ const SuperuserDashboard = ({ currentUser = {} }) => {
       <main>
         {activeTab === 'overview' && renderOverview()}
         {activeTab === 'users' && renderUserManagement()}
-        {activeTab === 'settings' && renderSettings()}
-        {activeTab === 'database' && renderDatabase()}
-        {activeTab === 'security' && renderSecurity()}
       </main>
     </div>
   );
