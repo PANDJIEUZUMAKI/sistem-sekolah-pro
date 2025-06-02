@@ -1,0 +1,31 @@
+{
+  "name": "sistem-sekolah-backend",
+  "version": "1.0.0",
+  "description": "Backend API untuk Sistem Sekolah TK & SD Abu Bakar Ash Shiddiq",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "migrate": "node src/scripts/migrate.js",
+    "seed": "node -e \"require('./src/seeders/guruSeeder').seedGuru().then(() => process.exit(0)).catch(err => { console.error(err); process.exit(1); })\"",
+    "db:reset": "npm run migrate && npm run seed",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "sekolah",
+    "education",
+    "api",
+    "backend"
+  ],
+  "author": "PANDJIEUZUMAKI",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
