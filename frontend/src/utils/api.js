@@ -1,4 +1,4 @@
-// src/utils/api.js - API Service untuk Dashboard Superuser
+// src/utils/api.js - API Service untuk Dashboard Superuser (Updated)
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000/api';
 
@@ -51,7 +51,14 @@ class ApiService {
     return this.fetchWithErrorHandling('/health');
   }
 
-  // Dashboard endpoints
+  // Alias untuk kompatibilitas dengan dashboard yang sudah ada
+  async checkHealth() {
+    return this.healthCheck();
+  }
+
+  // ================================
+  // GURU ENDPOINTS
+  // ================================
   async getTotalGuruAktif() {
     return this.fetchWithErrorHandling('/dashboard/guru-aktif');
   }
@@ -73,14 +80,66 @@ class ApiService {
     return this.fetchWithErrorHandling(`/dashboard/cari-guru?q=${encodedQuery}&status=${status}`);
   }
 
-  // Future endpoints for other entities (implement when backend is ready)
+  // ================================
+  // MURID ENDPOINTS (NEW - sesuai server.js)
+  // ================================
+  async getTotalMuridAktif() {
+    return this.fetchWithErrorHandling('/dashboard/murid-aktif');
+  }
+
+  async getStatistikMurid() {
+    return this.fetchWithErrorHandling('/dashboard/statistik-murid');
+  }
+
+  async getDaftarMuridAktif(page = 1, limit = 10, kelas = '') {
+    let url = `/dashboard/daftar-murid-aktif?page=${page}&limit=${limit}`;
+    if (kelas) {
+      url += `&kelas=${encodeURIComponent(kelas)}`;
+    }
+    return this.fetchWithErrorHandling(url);
+  }
+
+  async getMuridPerTahun() {
+    return this.fetchWithErrorHandling('/dashboard/murid-per-tahun');
+  }
+
+  async getMuridPerStatus(status = 'Aktif', page = 1, limit = 10) {
+    return this.fetchWithErrorHandling(`/dashboard/murid-per-status?status=${encodeURIComponent(status)}&page=${page}&limit=${limit}`);
+  }
+
+  async cariMurid(query, status = 'Aktif') {
+    const encodedQuery = encodeURIComponent(query);
+    return this.fetchWithErrorHandling(`/dashboard/cari-murid?q=${encodedQuery}&status=${encodeURIComponent(status)}`);
+  }
+
+  async getDetailMurid(nis) {
+    return this.fetchWithErrorHandling(`/dashboard/detail-murid/${encodeURIComponent(nis)}`);
+  }
+
+  // ================================
+  // UTILITY ENDPOINTS
+  // ================================
+  async getRingkasan() {
+    return this.fetchWithErrorHandling('/dashboard/ringkasan');
+  }
+
+  // Legacy method untuk backward compatibility
   async getTotalMurid() {
-    // Placeholder for future implementation
-    return {
-      success: true,
-      data: { total_murid: 1247 },
-      message: 'Mock data'
-    };
+    try {
+      const response = await this.getTotalMuridAktif();
+      return {
+        success: response.success,
+        data: { total_murid: response.data?.total_murid_aktif || 0 },
+        message: response.message || 'Data murid berhasil diambil'
+      };
+    } catch (error) {
+      // Fallback ke mock data jika API belum siap
+      return {
+        success: true,
+        data: { total_murid: 1247 },
+        message: 'Mock data - API murid belum tersedia'
+      };
+    }
   }
 
   async getTotalKaryawan() {
@@ -88,11 +147,13 @@ class ApiService {
     return {
       success: true,
       data: { total_karyawan: 23 },
-      message: 'Mock data'
+      message: 'Mock data - API karyawan belum tersedia'
     };
   }
 
-  // User management endpoints (for future implementation)
+  // ================================
+  // USER MANAGEMENT ENDPOINTS (for future implementation)
+  // ================================
   async createUser(userData) {
     return this.fetchWithErrorHandling('/users', {
       method: 'POST',
@@ -120,25 +181,31 @@ class ApiService {
     });
   }
 
-  // Utility methods
+  // ================================
+  // UTILITY METHODS
+  // ================================
   async testConnection() {
     try {
       const response = await this.healthCheck();
       return {
         connected: true,
         message: response.message || 'Connected successfully',
+        database_status: response.database_status || 'unknown',
         data: response
       };
     } catch (error) {
       return {
         connected: false,
         message: error.message,
+        database_status: 'disconnected',
         error: error
       };
     }
   }
 
-  // Batch operations (for performance optimization)
+  // ================================
+  // BATCH OPERATIONS (untuk optimasi performance)
+  // ================================
   async getBatchDashboardData() {
     try {
       const [totalGuru, statistikGuru, guruList] = await Promise.all([
@@ -159,27 +226,90 @@ class ApiService {
       throw new Error(`Gagal memuat data dashboard: ${error.message}`);
     }
   }
+
+  // Batch data lengkap untuk dashboard utama
+  async getBatchDashboardDataLengkap() {
+    try {
+      const results = await Promise.allSettled([
+        this.getTotalGuruAktif(),
+        this.getStatistikGuru(),
+        this.getTotalMuridAktif(),
+        this.getStatistikMurid(),
+        this.healthCheck()
+      ]);
+
+      // Extract data from settled promises
+      const [
+        totalGuruResult,
+        statistikGuruResult,
+        totalMuridResult,
+        statistikMuridResult,
+        healthResult
+      ] = results;
+
+      return {
+        success: true,
+        data: {
+          guru: {
+            total: totalGuruResult.status === 'fulfilled' ? totalGuruResult.value : null,
+            statistik: statistikGuruResult.status === 'fulfilled' ? statistikGuruResult.value : null
+          },
+          murid: {
+            total: totalMuridResult.status === 'fulfilled' ? totalMuridResult.value : null,
+            statistik: statistikMuridResult.status === 'fulfilled' ? statistikMuridResult.value : null
+          },
+          health: healthResult.status === 'fulfilled' ? healthResult.value : null
+        },
+        errors: results
+          .filter(result => result.status === 'rejected')
+          .map(result => result.reason?.message)
+      };
+    } catch (error) {
+      throw new Error(`Gagal memuat data dashboard lengkap: ${error.message}`);
+    }
+  }
+
+  // Helper method untuk development/debugging
+  async getAvailableEndpoints() {
+    try {
+      // Try to hit a non-existent endpoint to get the 404 response with available endpoints
+      await this.fetchWithErrorHandling('/non-existent-endpoint');
+    } catch (error) {
+      // This should return the 404 response with available endpoints list
+      throw error;
+    }
+  }
 }
 
 // Create singleton instance
 export const apiService = new ApiService();
 
-// Export individual methods for convenience
+// Export individual methods for convenience (UPDATED)
 export const {
   healthCheck,
+  checkHealth,
   getTotalGuruAktif,
   getStatistikGuru,
   getDaftarGuruAktif,
   getGuruPerBulan,
   cariGuru,
-  getTotalMurid,
+  getTotalMuridAktif,    // NEW
+  getStatistikMurid,     // NEW
+  getDaftarMuridAktif,   // NEW
+  getMuridPerTahun,      // NEW
+  getMuridPerStatus,     // NEW
+  cariMurid,             // NEW
+  getDetailMurid,        // NEW
+  getRingkasan,          // NEW
+  getTotalMurid,         // Legacy
   getTotalKaryawan,
   createUser,
   updateUser,
   deleteUser,
   updateUserStatus,
   testConnection,
-  getBatchDashboardData
+  getBatchDashboardData,
+  getBatchDashboardDataLengkap  // NEW
 } = apiService;
 
 // Export default

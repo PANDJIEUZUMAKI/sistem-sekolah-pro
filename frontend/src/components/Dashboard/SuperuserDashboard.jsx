@@ -15,7 +15,8 @@ import {
   Database,
   AlertCircle,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  AlertTriangle
 } from 'lucide-react';
 import { logout } from '../../utils/auth';
 import { apiService } from '../../utils/api';
@@ -23,11 +24,20 @@ import { apiService } from '../../utils/api';
 const SuperuserDashboard = ({ currentUser = {} }) => {
   const [activeTab, setActiveTab] = useState('overview');
   
-  // State for API data
+  // State for API data - GURU
   const [dashboardData, setDashboardData] = useState({
     totalGuruAktif: 0,
     statistikGuru: {},
     totalSemua: 0
+  });
+
+  // State for API data - MURID 
+  const [muridData, setMuridData] = useState({
+    totalMuridAktif: 0,
+    statistikMurid: {},
+    totalSemuaMurid: 0,
+    statistikPerKelas: {},
+    statistikPerJenisKelamin: {}
   });
   
   const [guruList, setGuruList] = useState([]);
@@ -40,28 +50,61 @@ const SuperuserDashboard = ({ currentUser = {} }) => {
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [databaseStatus, setDatabaseStatus] = useState('connected');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Mock data for other stats (murid & karyawan) - replace with real API later
-  const [mockStats] = useState({
-    totalMurid: 1247,
+  // Karyawan data - akan diambil dari database nanti
+  const [karyawanData, setKaryawanData] = useState({
     totalKaryawan: 23
   });
 
-  // Load guru list - useCallback to fix dependency warning
+  // Utility function untuk format date
+  const formatDate = useCallback((dateString) => {
+    if (!dateString) return 'Data tidak tersedia';
+    
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffTime = Math.abs(now - date);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 1) return '1 hari lalu';
+    if (diffDays < 7) return `${diffDays} hari lalu`;
+    if (diffDays < 30) return `${Math.ceil(diffDays / 7)} minggu lalu`;
+    return `${Math.ceil(diffDays / 30)} bulan lalu`;
+  }, []);
+
+  // Check database status
+  const checkDatabaseStatus = useCallback(async () => {
+    try {
+      const response = await apiService.checkHealth();
+      if (response.success && response.database_status === 'connected') {
+        setDatabaseStatus('connected');
+        return true;
+      } else {
+        setDatabaseStatus('disconnected');
+        setError('Database tidak terhubung. Periksa konfigurasi database Anda.');
+        return false;
+      }
+    } catch (err) {
+      setDatabaseStatus('disconnected');
+      setError('Tidak dapat terhubung ke server atau database.');
+      return false;
+    }
+  }, []);
+
+  // Load guru list
   const loadGuruList = useCallback(async (page = 1, limit = 10) => {
     try {
       const response = await apiService.getDaftarGuruAktif(page, limit);
       
       if (response.success) {
-        // Transform API data to match existing component structure
         const transformedGuru = response.data.guru.map(guru => ({
           id: guru.id,
           name: guru.nama,
           email: guru.email,
           role: 'GURU',
           status: guru.status === 'aktif' ? 'Aktif' : 'Nonaktif',
-          lastLogin: formatDate(guru.tanggal_dibuat), // Replace with real last login when available
+          lastLogin: formatDate(guru.tanggal_dibuat),
           phone: guru.telepon,
           education: guru.pendidikan_terakhir,
           gender: guru.jenis_kelamin
@@ -69,46 +112,94 @@ const SuperuserDashboard = ({ currentUser = {} }) => {
         
         setGuruList(transformedGuru);
         setPagination(response.data.pagination);
+      } else {
+        throw new Error(response.message || 'Gagal memuat data guru');
       }
     } catch (err) {
       console.error('Error loading guru list:', err);
-      setError('Gagal memuat daftar guru. Silakan coba lagi.');
+      setError(`Gagal memuat daftar guru: ${err.message}`);
     }
-  }, []); // Empty dependency array is correct here
+  }, [formatDate]);
+
+  // Load murid data langsung dari database
+  const loadMuridData = useCallback(async () => {
+    try {
+      const [totalMuridResponse, statistikMuridResponse] = await Promise.all([
+        apiService.getTotalMuridAktif(),
+        apiService.getStatistikMurid()
+      ]);
+
+      if (totalMuridResponse.success && statistikMuridResponse.success) {
+        setMuridData({
+          totalMuridAktif: totalMuridResponse.data.total_murid_aktif,
+          statistikMurid: statistikMuridResponse.data.statistik_per_status || {},
+          totalSemuaMurid: statistikMuridResponse.data.total_semua_murid || 0,
+          statistikPerKelas: statistikMuridResponse.data.statistik_per_kelas || {},
+          statistikPerJenisKelamin: statistikMuridResponse.data.statistik_per_jenis_kelamin || {}
+        });
+        
+        console.log('✅ Data murid berhasil dimuat dari database');
+      } else {
+        throw new Error('Gagal memuat data murid: ' + (totalMuridResponse.message || statistikMuridResponse.message));
+      }
+    } catch (err) {
+      console.error('Error loading murid data:', err);
+      setError(`Gagal memuat data murid: ${err.message}`);
+      setMuridData({
+        totalMuridAktif: 0,
+        statistikMurid: {},
+        totalSemuaMurid: 0,
+        statistikPerKelas: {},
+        statistikPerJenisKelamin: {}
+      });
+    }
+  }, []);
 
   // Load dashboard data
   const loadDashboardData = useCallback(async () => {
     try {
       setError(null);
-      const [totalResponse, statistikResponse] = await Promise.all([
+      
+      const dbConnected = await checkDatabaseStatus();
+      if (!dbConnected) {
+        return;
+      }
+
+      const [totalGuruResponse, statistikGuruResponse] = await Promise.all([
         apiService.getTotalGuruAktif(),
         apiService.getStatistikGuru()
       ]);
 
-      if (totalResponse.success && statistikResponse.success) {
+      if (totalGuruResponse.success && statistikGuruResponse.success) {
         setDashboardData({
-          totalGuruAktif: totalResponse.data.total_guru_aktif,
-          statistikGuru: statistikResponse.data.statistik_per_status,
-          totalSemua: statistikResponse.data.total_semua_guru
+          totalGuruAktif: totalGuruResponse.data.total_guru_aktif,
+          statistikGuru: statistikGuruResponse.data.statistik_per_status,
+          totalSemua: statistikGuruResponse.data.total_semua_guru
         });
+      } else {
+        throw new Error('Gagal memuat data guru: ' + (totalGuruResponse.message || statistikGuruResponse.message));
       }
+
+      await loadMuridData();
+
     } catch (err) {
       console.error('Error loading dashboard data:', err);
-      setError('Gagal memuat data dashboard. Silakan coba lagi.');
+      setError(err.message || 'Gagal memuat data dashboard');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [checkDatabaseStatus, loadMuridData]);
 
   // Load data on component mount
   useEffect(() => {
     loadDashboardData();
     loadGuruList();
-  }, [loadDashboardData, loadGuruList]); // Fixed: Added dependencies
+  }, [loadDashboardData, loadGuruList]);
 
+  // Search guru function
   const searchGuru = async (query) => {
     if (query.length < 2) {
-      loadGuruList(); // Load all if query is too short
+      loadGuruList();
       return;
     }
 
@@ -129,32 +220,19 @@ const SuperuserDashboard = ({ currentUser = {} }) => {
         }));
         
         setGuruList(transformedGuru);
-        // Reset pagination for search results
         setPagination({
           current_page: 1,
           total_pages: 1,
           total_data: transformedGuru.length,
           per_page: transformedGuru.length
         });
+      } else {
+        throw new Error(response.message || 'Gagal mencari guru');
       }
     } catch (err) {
       console.error('Error searching guru:', err);
-      setError('Gagal mencari guru. Silakan coba lagi.');
+      setError(`Gagal mencari guru: ${err.message}`);
     }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Data tidak tersedia';
-    
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffTime = Math.abs(now - date);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 1) return '1 hari lalu';
-    if (diffDays < 7) return `${diffDays} hari lalu`;
-    if (diffDays < 30) return `${Math.ceil(diffDays / 7)} minggu lalu`;
-    return `${Math.ceil(diffDays / 30)} bulan lalu`;
   };
 
   const handleLogout = () => {
@@ -172,7 +250,6 @@ const SuperuserDashboard = ({ currentUser = {} }) => {
     const query = e.target.value;
     setSearchQuery(query);
     
-    // Debounce search
     const timeoutId = setTimeout(() => {
       searchGuru(query);
     }, 500);
@@ -185,8 +262,6 @@ const SuperuserDashboard = ({ currentUser = {} }) => {
   };
 
   const toggleUserStatus = async (userId) => {
-    // This would require an API endpoint to update user status
-    // For now, just update local state
     setGuruList(prevUsers => 
       prevUsers.map(user => 
         user.id === userId 
@@ -202,18 +277,42 @@ const SuperuserDashboard = ({ currentUser = {} }) => {
   ];
 
   const userName = currentUser?.name || 'Admin Utama';
-  // Removed unused userEmail variable
+
+  // Database Status Component
+  const DatabaseStatusBanner = () => {
+    if (databaseStatus === 'connected') return null;
+    
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+        <div className="flex items-center">
+          <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
+          <span className="text-red-800 font-medium">
+            Database tidak terhubung - Tidak dapat memuat data
+          </span>
+          <button
+            onClick={handleRefresh}
+            className="ml-4 text-red-600 hover:text-red-800 underline"
+          >
+            Coba Koneksi Ulang
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   // Error Component
   const ErrorMessage = ({ message, onRetry }) => (
     <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
       <div className="flex items-center">
         <AlertCircle className="h-5 w-5 text-red-400 mr-2" />
-        <span className="text-red-800">{message}</span>
+        <div className="flex-1">
+          <span className="text-red-800 font-medium">Error:</span>
+          <span className="text-red-700 ml-2">{message}</span>
+        </div>
         {onRetry && (
           <button
             onClick={onRetry}
-            className="ml-4 text-red-600 hover:text-red-800 underline"
+            className="ml-4 px-3 py-1 text-red-600 hover:text-red-800 border border-red-300 rounded hover:bg-red-100 transition-colors"
           >
             Coba Lagi
           </button>
@@ -226,23 +325,35 @@ const SuperuserDashboard = ({ currentUser = {} }) => {
   const LoadingSpinner = () => (
     <div className="flex items-center justify-center p-8">
       <Loader2 className="h-8 w-8 animate-spin text-red-600 mr-2" />
-      <span className="text-gray-600">Memuat data...</span>
+      <span className="text-gray-600">Memuat data dari database...</span>
+    </div>
+  );
+
+  // No Data Component
+  const NoDataMessage = ({ message }) => (
+    <div className="text-center py-12">
+      <Database className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+      <h3 className="text-lg font-medium text-gray-900 mb-2">Tidak ada data</h3>
+      <p className="text-gray-500">{message}</p>
     </div>
   );
 
   const renderOverview = () => (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="text-center mb-12">
-        <h2 className="text-4xl font-bold text-gray-900 mb-4">Ringkasan Sekolah Abu Bakar Ash Shiddiq</h2>
+        <h2 className="text-4xl font-bold text-gray-900 mb-4">Sekolah Abu Bakar Ash Shiddiq</h2>
         <button
           onClick={handleRefresh}
           className="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          disabled={loading}
         >
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh Data
+          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          {loading ? 'Memuat...' : 'Refresh Data'}
         </button>
       </div>
 
+      <DatabaseStatusBanner />
+      
       {error && <ErrorMessage message={error} onRetry={handleRefresh} />}
       
       {loading ? (
@@ -274,9 +385,13 @@ const SuperuserDashboard = ({ currentUser = {} }) => {
                   <UserCheck className="h-12 w-12 text-green-600" />
                 </div>
                 <div>
-                  <p className="text-lg font-semibold text-gray-600 mb-2">Total Murid</p>
-                  <p className="text-4xl font-bold text-gray-900">{mockStats.totalMurid}</p>
-                  <p className="text-sm text-gray-500 mt-1">TK & SD</p>
+                  <p className="text-lg font-semibold text-gray-600 mb-2">Total Murid Aktif</p>
+                  <p className="text-4xl font-bold text-gray-900">{muridData.totalMuridAktif}</p>
+                  {muridData.totalSemuaMurid > 0 && (
+                    <p className="text-sm text-gray-500 mt-1">
+                      dari {muridData.totalSemuaMurid} total murid
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -288,29 +403,81 @@ const SuperuserDashboard = ({ currentUser = {} }) => {
                 </div>
                 <div>
                   <p className="text-lg font-semibold text-gray-600 mb-2">Total Karyawan</p>
-                  <p className="text-4xl font-bold text-gray-900">{mockStats.totalKaryawan}</p>
+                  <p className="text-4xl font-bold text-gray-900">{karyawanData.totalKaryawan}</p>
                   <p className="text-sm text-gray-500 mt-1">Staff & Admin</p>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Additional Statistics */}
+          {/* Data Guru Section */}
           {Object.keys(dashboardData.statistikGuru).length > 0 && (
-            <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100 mb-12">
-              <h3 className="text-2xl font-bold text-gray-900 mb-6">Statistik Guru Berdasarkan Status</h3>
+            <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100 mb-8">
+              <h3 className="text-2xl font-bold text-gray-900 mb-6">Data Guru</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {Object.entries(dashboardData.statistikGuru).map(([status, jumlah]) => (
-                  <div key={status} className="text-center p-4 bg-gray-50 rounded-lg">
-                    <p className="text-lg font-semibold text-gray-600 capitalize">{status}</p>
-                    <p className="text-3xl font-bold text-gray-900">{jumlah}</p>
+                  <div key={status} className="text-center p-4 bg-blue-50 rounded-lg">
+                    <p className="text-lg font-semibold text-blue-600 capitalize">{status}</p>
+                    <p className="text-3xl font-bold text-blue-900">{jumlah}</p>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Activity Feed - Keep the existing mock data */}
+          {/* Data Murid Section */}
+          {(Object.keys(muridData.statistikMurid).length > 0 || Object.keys(muridData.statistikPerKelas).length > 0) && (
+            <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100 mb-8">
+              <h3 className="text-2xl font-bold text-gray-900 mb-6">Data Murid</h3>
+              
+              {/* Statistik per Status */}
+              {Object.keys(muridData.statistikMurid).length > 0 && (
+                <div className="mb-6">
+                  <h4 className="text-lg font-semibold text-gray-700 mb-4">Statistik per Status</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {Object.entries(muridData.statistikMurid).map(([status, jumlah]) => (
+                      <div key={status} className="text-center p-4 bg-green-50 rounded-lg">
+                        <p className="text-lg font-semibold text-green-600">{status}</p>
+                        <p className="text-3xl font-bold text-green-900">{jumlah}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Statistik per Kelas */}
+              {Object.keys(muridData.statistikPerKelas).length > 0 && (
+                <div className="mb-6">
+                  <h4 className="text-lg font-semibold text-gray-700 mb-4">Statistik per Kelas</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {Object.entries(muridData.statistikPerKelas).map(([kelas, jumlah]) => (
+                      <div key={kelas} className="text-center p-3 bg-yellow-50 rounded-lg">
+                        <p className="text-sm font-semibold text-yellow-600">{kelas}</p>
+                        <p className="text-2xl font-bold text-yellow-900">{jumlah}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Statistik per Jenis Kelamin */}
+              {Object.keys(muridData.statistikPerJenisKelamin).length > 0 && (
+                <div>
+                  <h4 className="text-lg font-semibold text-gray-700 mb-4">Statistik per Jenis Kelamin</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {Object.entries(muridData.statistikPerJenisKelamin).map(([jenisKelamin, jumlah]) => (
+                      <div key={jenisKelamin} className="text-center p-4 bg-purple-50 rounded-lg">
+                        <p className="text-lg font-semibold text-purple-600">{jenisKelamin}</p>
+                        <p className="text-3xl font-bold text-purple-900">{jumlah}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Activity Feed */}
           <div className="bg-white rounded-2xl shadow-xl border border-gray-100">
             <div className="px-8 py-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
               <h3 className="text-2xl font-bold text-gray-900">Aktivitas Terkini - TK & SD Abu Bakar Ash Shiddiq</h3>
@@ -339,7 +506,7 @@ const SuperuserDashboard = ({ currentUser = {} }) => {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-lg text-gray-900">
-                      <span className="font-semibold">Muhammad Alfarizi</span> mendaftar sebagai murid baru TK B
+                      <span className="font-semibold">Ahmad Faizi Rahman</span> mendaftar sebagai murid baru TK A
                     </p>
                     <p className="text-sm text-gray-500 mt-1">3 jam yang lalu</p>
                   </div>
@@ -427,11 +594,15 @@ const SuperuserDashboard = ({ currentUser = {} }) => {
         </div>
       </div>
 
+      <DatabaseStatusBanner />
+
       {error && <ErrorMessage message={error} onRetry={() => loadGuruList()} />}
 
       <div className="bg-white shadow-2xl rounded-2xl border border-gray-100 overflow-hidden">
         {loading ? (
           <LoadingSpinner />
+        ) : guruList.length === 0 ? (
+          <NoDataMessage message="Tidak ada data guru yang tersedia." />
         ) : (
           <>
             <table className="min-w-full divide-y divide-gray-200">
@@ -567,7 +738,6 @@ const SuperuserDashboard = ({ currentUser = {} }) => {
                         Previous
                       </button>
                       
-                      {/* Page numbers */}
                       {Array.from({ length: pagination.total_pages }, (_, i) => i + 1).map((page) => (
                         <button
                           key={page}
